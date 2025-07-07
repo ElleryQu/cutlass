@@ -62,23 +62,42 @@ fp32 data by using NVIDIA Ampere architecture.
 #include "utils.h"
 #include "native_gemm.h"
 
+using IntT = __uint128_t;  // <- data type of elements in input matrices and output matrix
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 // The code section below describes datatype for input, output matrices and computation between
 // elements in input matrices.
-using ElementAccumulator = uint32_t;                   // <- data type of accumulator
+using ElementAccumulator = IntT;                   // <- data type of accumulator
 using ElementComputeEpilogue = ElementAccumulator;  // <- data type of epilogue operations
-using ElementInputA = uint32_t;                        // <- data type of elements in input matrix A
-using ElementInputB = uint32_t;                        // <- data type of elements in input matrix B
-using ElementOutput = uint32_t;                        // <- data type of elements in output matrix D
+using ElementInputA = IntT;                        // <- data type of elements in input matrix A
+using ElementInputB = IntT;                        // <- data type of elements in input matrix B
+using ElementOutput = IntT;                        // <- data type of elements in output matrix D
 
 // The code section below describes matrix layout of input and output matrices. Column Major for
 // Matrix B, Row Major for Matrix A and Row Major for Matrix C
 using LayoutInputA = cutlass::layout::RowMajor;
 using LayoutInputB = cutlass::layout::ColumnMajor;
 using LayoutOutput = cutlass::layout::RowMajor;
+
+using OutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,  // Data-type of output matrix D
+    1,  // Data-type of epilogue operation
+    ElementAccumulator,  // Data-type of accumulator
+    ElementOutput,  // Data-type of output matrix D
+    cutlass::epilogue::thread::ScaleType::Nothing>;  // Scale type for epilogue operation
+
+using CutlassDefaultGemmSimt = cutlass::gemm::device::Gemm<ElementInputA,          // Data-type of A matrix
+                                                LayoutInputA,               // Layout of A matrix
+                                                ElementInputB,              // Data-type of B matrix
+                                                LayoutInputB,               // Layout of B matrix
+                                                ElementAccumulator,         // Data-type of C matrix
+                                                LayoutOutput,
+                                                ElementOutput,
+                                                cutlass::arch::OpClassSimt,
+                                                cutlass::arch::Sm80>;       // Layout of C matrix
 
 using CutlassGemmSimt = cutlass::gemm::device::Gemm<ElementInputA,          // Data-type of A matrix
                                                 LayoutInputA,               // Layout of A matrix
@@ -88,7 +107,11 @@ using CutlassGemmSimt = cutlass::gemm::device::Gemm<ElementInputA,          // D
                                                 LayoutOutput,
                                                 ElementOutput,
                                                 cutlass::arch::OpClassSimt,
-                                                cutlass::arch::Sm80>;       // Layout of C matrix
+                                                cutlass::arch::Sm80,
+                                                CutlassDefaultGemmSimt::ThreadblockShape,
+                                                CutlassDefaultGemmSimt::WarpShape,
+                                                CutlassDefaultGemmSimt::InstructionShape,
+                                                OutputOp>;
 
 int RunGemm(Options &options) {
 
@@ -107,14 +130,23 @@ int RunGemm(Options &options) {
   tensor_c.sync_device();
 
   // Initialize alpha and beta for dot product computation
-  ElementComputeEpilogue alpha = ElementComputeEpilogue(options.alpha);
-  ElementComputeEpilogue beta = ElementComputeEpilogue(options.beta);
+  ElementComputeEpilogue alpha = ElementComputeEpilogue(static_cast<uint64_t>(options.alpha));
+  ElementComputeEpilogue beta = ElementComputeEpilogue(static_cast<uint64_t>(options.beta));
 
   ////////////////////////////////////////////////
   // Native GEMM
   ////////////////////////////////////////////////
   CREATE_OUTPUT_TENSOR(tensor_d_native);
   {
+    std::cout << "---------------------------------------------" << std::endl;
+    std::cout << "+ Meta info" << std::endl;
+    std::cout << "  Problem size: " << problem_size.m() << " x " << problem_size.n() << " x " << problem_size.k() << std::endl;
+    std::cout << "  Iterations: " << options.iterations << std::endl;
+    std::cout << "  Batch count: " << options.batch_count << std::endl;
+    std::cout << "  Input bytes: " << sizeof(ElementInputA) << " x " << sizeof(ElementInputB) << std::endl;
+    std::cout << "  Output bytes: " << sizeof(ElementOutput) << std::endl;
+    std::cout << "  Accumulator bytes: " << sizeof(ElementAccumulator) << std::endl;
+
     std::cout << "---------------------------------------------" << std::endl;
     std::cout << "+ Running " << YELLOW << UNDERLINE << "NativeGemm" << RESET << std::endl;
 
@@ -131,7 +163,7 @@ int RunGemm(Options &options) {
         tensor_d_native.device_data(), tensor_d_native.stride(0));
     }
   }
-  PrintTensor(tensor_d_native, 3);
+  // PrintTensor(tensor_d_native, 3);
 
   ////////////////////////////////////////////////
   // Cutlass GEMM Simt Version
@@ -148,6 +180,7 @@ int RunGemm(Options &options) {
     status = gemm_op.initialize(arguments, workspace.get());
     CUTLASS_CHECK(status);
 
+    // TODO: Compiling hang on here.
     Result result(&options);
     for (int iter = 0; iter < options.iterations; ++iter) {
       // Launch initialized CUTLASS kernel
@@ -155,7 +188,7 @@ int RunGemm(Options &options) {
       CUTLASS_CHECK(status);
     }
   }
-  PrintTensor(tensor_d_simt, 3);
+  // PrintTensor(tensor_d_simt, 3);
   std::cout << "CheckTensorEqual: " << (CheckTensorEqual(tensor_d_native, tensor_d_simt) ? "Passed" : "Failed") << std::endl;
 
   return 0;

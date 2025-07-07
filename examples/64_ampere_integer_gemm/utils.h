@@ -94,8 +94,8 @@ struct Options {
 
   cutlass::gemm::GemmCoord problem_size;
   int batch_count;
-  float alpha;
-  float beta;
+  int alpha;
+  int beta;
 
   bool reference_check;
   int iterations;
@@ -142,13 +142,13 @@ struct Options {
       << "  --m=<int>                   GEMM M dimension\n"
       << "  --n=<int>                   GEMM N dimension\n"
       << "  --k=<int>                   GEMM K dimension\n"
-      << "  --alpha=<f32>               Epilogue scalar alpha\n"
-      << "  --beta=<f32>                Epilogue scalar beta\n\n"
+      << "  --alpha=<int>               Epilogue scalar alpha\n"
+      << "  --beta=<int>                Epilogue scalar beta\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out << "\n\nExamples:\n\n"
       << "$ ./examples/64_ampere_integer_gemm/ampere_integer_gemm --m=1024 --n=512 --k=1024 \\\n"
-      << "     --alpha=2 --beta=0.707 \n\n";
+      << "     --alpha=2 --beta=1 \n\n";
 
     return out;
   }

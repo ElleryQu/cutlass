@@ -162,6 +162,11 @@ private:
   // Data members
   //
 
+  /**
+   * TODO: Currently, NVCC will hang on compiling when ElementCompute is __uint128_t and kScale is not ScaleType::Nothing.
+   * We have found that computation around alpha_ cause this bug, but we still don't know why.
+   * To reproduce this bug, create a gemm instance with other style and just modify operator().
+   */
   ElementCompute alpha_;
   ElementCompute beta_;
 

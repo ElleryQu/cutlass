@@ -32,3 +32,8 @@ cutlass_example_add_executable(
   64_ampere_integer_gemm
   ampere_integer_gemm.cu
   )
+
+cutlass_example_add_executable(
+  64_test_u128
+  test_u128.cu
+  )
